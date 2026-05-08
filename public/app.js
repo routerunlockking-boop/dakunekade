@@ -480,7 +480,7 @@ let invoiceTemplates = [];
 const DEFAULT_ORDER = ['header', 'invoice_info', 'people_info', 'items', 'totals', 'footer'];
 const DEFAULT_VIS = { header:true, invoice_info:true, people_info:true, items:true, totals:true, footer:true };
 const DEFAULT_LABELS = {
-    header_title: 'දකුණේ කඩේ', header_subtitle: 'ඝල්ලෙ', header_contact: 'Mobile: 078-65000 90', tax_text: 'Tax Invoice',
+    header_title: 'දකුණේ කඩේ', header_subtitle: 'Galle', header_contact: 'Mobile: 078-65000 90', tax_text: 'Tax Invoice',
     label_bill: 'Bill No:', label_date: 'Date:',
     label_cashier: 'Cashier:', label_customer: 'Customer:', label_tel: 'Tel:',
     label_item: 'Item', label_qty: 'Qty', label_amount: 'Amount',
