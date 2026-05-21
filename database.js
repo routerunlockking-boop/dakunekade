@@ -81,7 +81,8 @@ const ProductSchema = new mongoose.Schema({
     is_imei_tracked: { type: Boolean, default: false },
     warranty_months: { type: Number, default: 0 },
     image: { type: String },
-    supplier: { type: String, default: '' }
+    supplier: { type: String, default: '' },
+    is_supplier_paid: { type: Boolean, default: false }
 });
 
 // Status history entry for IMEI items
@@ -191,6 +192,26 @@ const SupplierSchema = new mongoose.Schema({
     created_date: { type: String, default: () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }
 });
 
+const SupplierPaymentSchema = new mongoose.Schema({
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    supplier_name: { type: String, required: true },
+    invoice_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
+    invoice_number: { type: String, default: '' },
+    product_name: { type: String, required: true },
+    quantity: { type: Number, default: 1 },
+    cost_price: { type: Number, default: 0 },
+    total_amount: { type: Number, default: 0 },
+    paid_amount: { type: Number, default: 0 },
+    selling_price: { type: Number, default: 0 },
+    sale_date: { type: String, default: '' },
+    is_paid: { type: Boolean, default: false },
+    paid_date: { type: String, default: '' },
+    notes: { type: String, default: '' },
+    is_imei_product: { type: Boolean, default: false },
+    imei_numbers: [{ type: String }],
+    paid_imeis: [{ type: String }]
+});
+
 const VoucherSchema = new mongoose.Schema({
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     code: { type: String, required: true, unique: true },
@@ -211,6 +232,7 @@ const Invoice = mongoose.model('Invoice', InvoiceSchema);
 const Customer = mongoose.model('Customer', CustomerSchema);
 const Supplier = mongoose.model('Supplier', SupplierSchema);
 const Voucher = mongoose.model('Voucher', VoucherSchema);
+const SupplierPayment = mongoose.model('SupplierPayment', SupplierPaymentSchema);
 
 // Create default admin user
 const initializeDatabase = async () => {
@@ -266,5 +288,6 @@ module.exports = {
     Invoice,
     Customer,
     Supplier,
-    Voucher
+    Voucher,
+    SupplierPayment
 };

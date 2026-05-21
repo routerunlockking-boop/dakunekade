@@ -9,7 +9,7 @@ const adminOnly = (req, res, next) => {
 
 router.get('/users', adminOnly, async (req, res) => {
     try {
-        const users = await User.find({ role: { $ne: 'admin' } });
+        const users = await User.find({});
         res.json(users.map(u => ({
             id: u._id.toString(), email: u.email, business_name: u.business_name,
             whatsapp_number: u.whatsapp_number || '', role: u.role,
@@ -45,6 +45,15 @@ router.delete('/users/:id', adminOnly, async (req, res) => {
         await Product.deleteMany({ user_id: req.params.id });
         await Invoice.deleteMany({ user_id: req.params.id });
         res.json({ message: 'User and data deleted' });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/pending-count', adminOnly, async (req, res) => {
+    try {
+        const count = await User.countDocuments({ is_active: false, role: { $ne: 'admin' } });
+        res.json({ count });
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }

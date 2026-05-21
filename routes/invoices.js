@@ -209,6 +209,10 @@ router.post('/', async (req, res) => {
             }
         }
 
+
+
+        // Invoices no longer create SupplierPayment records directly. This is handled via inventory additions.
+
         res.status(201).json({
             message: 'Invoice created successfully',
             invoice: {

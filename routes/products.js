@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { Product, Category } = require('../database');
+const { Product, Category, SupplierPayment } = require('../database');
+const { syncSupplierPaymentForProduct } = require('../utils/supplierHelper');
 
 // Get all products
 router.get('/', async (req, res) => {
@@ -18,6 +19,7 @@ router.get('/', async (req, res) => {
                 is_imei_tracked: p.is_imei_tracked || false,
                 warranty_months: p.warranty_months || 0,
                 supplier: p.supplier || '',
+                is_supplier_paid: p.is_supplier_paid || false,
                 owner_name: p.user_id ? p.user_id.business_name : 'Unknown'
             };
             if (lite !== 'true') r.image = p.image;
@@ -70,7 +72,7 @@ router.get('/:id/image', async (req, res) => {
 
 // Create product
 router.post('/', async (req, res) => {
-    let { name, barcode, quantity, cost_price, price, image, category, is_imei_tracked, warranty_months, supplier } = req.body;
+    let { name, barcode, quantity, cost_price, price, image, category, is_imei_tracked, warranty_months, supplier, is_supplier_paid } = req.body;
     if (!name || price === undefined) return res.status(400).json({ error: 'Missing required fields' });
     
     // Auto-generate barcode for non-IMEI products if not provided
@@ -108,15 +110,23 @@ router.post('/', async (req, res) => {
             cost_price: cost_price || 0, price,
             is_imei_tracked: is_imei_tracked || false,
             warranty_months: warranty_months || 0,
-            image, supplier: supplier || ''
+            image, supplier: supplier || '',
+            is_supplier_paid: is_supplier_paid || false
         });
+
+        // Sync supplier payment record
+        if (product.supplier) {
+            await syncSupplierPaymentForProduct(product._id, req.user._id);
+        }
+
         res.status(201).json({
             id: product._id.toString(), name, barcode: product.barcode,
             category: product.category,
             quantity: product.quantity, cost_price: product.cost_price, price,
             is_imei_tracked: product.is_imei_tracked,
             warranty_months: product.warranty_months,
-            supplier: product.supplier
+            supplier: product.supplier,
+            is_supplier_paid: product.is_supplier_paid
         });
     } catch (err) {
         return res.status(500).json({ error: err.message });
@@ -124,7 +134,7 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-    const { name, barcode, quantity, cost_price, price, image, category, is_imei_tracked, warranty_months, supplier } = req.body;
+    const { name, barcode, quantity, cost_price, price, image, category, is_imei_tracked, warranty_months, supplier, is_supplier_paid } = req.body;
     try {
         const qf = req.user.role === 'admin' ? { _id: req.params.id } : { _id: req.params.id, user_id: req.user._id };
         
@@ -133,17 +143,34 @@ router.put('/:id', async (req, res) => {
             const collision = await Product.findOne({ user_id: req.user._id, barcode: barcode.trim(), _id: { $ne: req.params.id } });
             if (collision) return res.status(400).json({ error: 'This barcode is already assigned to another product' });
         }
+
+        // Fetch old product for diff tracking
+        const oldProduct = await Product.findOne(qf);
+        if (!oldProduct) return res.status(404).json({ error: 'Product not found' });
+
         const updateData = {
             name, barcode: barcode || '', cost_price: cost_price || 0, price, image,
             category: category || 'General',
             is_imei_tracked: is_imei_tracked || false,
             warranty_months: warranty_months || 0,
-            supplier: supplier || ''
+            supplier: supplier || '',
+            is_supplier_paid: is_supplier_paid || false
         };
         if (quantity !== undefined) updateData.quantity = quantity;
 
         const product = await Product.findOneAndUpdate(qf, updateData, { new: true });
         if (!product) return res.status(404).json({ error: 'Product not found' });
+
+        // Sync supplier payment record
+        const qtyDiff = product.is_imei_tracked ? 0 : (product.quantity - (oldProduct.quantity || 0));
+        await syncSupplierPaymentForProduct(
+            product._id,
+            req.user._id,
+            oldProduct.name,
+            oldProduct.supplier,
+            qtyDiff
+        );
+
         res.json({ message: 'Product updated successfully' });
     } catch (err) {
         return res.status(500).json({ error: err.message });
@@ -154,8 +181,17 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const qf = req.user.role === 'admin' ? { _id: req.params.id } : { _id: req.params.id, user_id: req.user._id };
-        const product = await Product.findOneAndDelete(qf);
+        const product = await Product.findOne(qf);
         if (!product) return res.status(404).json({ error: 'Product not found' });
+
+        // Delete associated supplier payment record
+        await SupplierPayment.deleteOne({
+            supplier_name: product.supplier,
+            product_name: product.name,
+            user_id: req.user._id
+        });
+
+        await Product.deleteOne(qf);
         res.json({ message: 'Product deleted successfully' });
     } catch (err) {
         return res.status(500).json({ error: err.message });

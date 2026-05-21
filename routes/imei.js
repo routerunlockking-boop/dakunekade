@@ -3,6 +3,7 @@ const router = express.Router();
 const { ImeiItem, Product } = require('../database');
 const { sendStatusEmail } = require('../utils/email');
 const { sendSMS } = require('../utils/sms');
+const { syncSupplierPaymentForProduct } = require('../utils/supplierHelper');
 
 // Helper to strictly synchronize Product stock count with actual "In Stock" IMEI items
 async function syncProductStock(product_id) {
@@ -161,6 +162,9 @@ router.post('/', async (req, res) => {
         // Synchronize product quantity
         await syncProductStock(product_id);
 
+        // Sync supplier payment record
+        await syncSupplierPaymentForProduct(product_id, req.user._id);
+
         res.status(201).json({
             message: `${results.length} items added successfully`,
             added: results.length,
@@ -194,6 +198,9 @@ router.put('/:id/status', async (req, res) => {
 
         // Synchronize product quantity to exact "In Stock" count
         await syncProductStock(item.product_id);
+
+        // Sync supplier payment record
+        await syncSupplierPaymentForProduct(item.product_id, req.user._id);
 
         // Send email notification if requested
         if (send_email && item.customer_email) {
@@ -280,6 +287,9 @@ router.delete('/:id', async (req, res) => {
         
         // Synchronize product stock
         await syncProductStock(item.product_id);
+
+        // Sync supplier payment record
+        await syncSupplierPaymentForProduct(item.product_id, req.user._id);
         
         res.json({ message: 'IMEI item deleted' });
     } catch (err) {

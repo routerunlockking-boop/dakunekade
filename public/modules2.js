@@ -140,8 +140,11 @@ function setupPOS() {
     document.getElementById('pos-paid').addEventListener('input', updateBillTotals);
     document.getElementById('btn-apply-voucher').addEventListener('click', applyVoucher);
     document.getElementById('btn-submit-bill').addEventListener('click', submitBill);
-    
-    // Handle customer selection in POS
+
+    // Hold Bill
+    document.getElementById('btn-hold-bill')?.addEventListener('click', holdBill);
+
+    // Handle customer selection in POS dropdown
     document.getElementById('pos-cust-select')?.addEventListener('change', function() {
         if (!this.value) {
             document.getElementById('pos-cust-name').value = '';
@@ -158,6 +161,9 @@ function setupPOS() {
             document.getElementById('pos-cust-nic').value = c.nic_number || '';
             document.getElementById('pos-cust-email').value = c.email || '';
             document.getElementById('pos-cust-address').value = c.address || '';
+            // Also update the search field
+            const searchEl = document.getElementById('pos-cust-search');
+            if (searchEl) searchEl.value = c.name;
         }
     });
 
@@ -190,7 +196,110 @@ function setupPOS() {
     loadCustomers();
     // Load cashiers for the dropdown
     loadCashiers();
+    // Show any held bills
+    renderHeldBills();
 }
+
+// ===== HOLD BILL =====
+function holdBill() {
+    if (!currentBill.length) return toast('No items in bill to hold', 'error');
+    const held = JSON.parse(localStorage.getItem('pos_held_bills') || '[]');
+    const label = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    held.push({
+        id: Date.now(),
+        label,
+        bill: JSON.parse(JSON.stringify(currentBill)),
+        imeiInBill: JSON.parse(JSON.stringify(imeiInBill)),
+        hasImeiInBill,
+        cashier: document.getElementById('pos-cashier-select').value,
+        cashierCustom: document.getElementById('pos-cashier-custom').value,
+        custName: document.getElementById('pos-cust-name').value,
+        custPhone: document.getElementById('pos-cust-phone').value,
+        custNic: document.getElementById('pos-cust-nic').value,
+        custEmail: document.getElementById('pos-cust-email').value,
+        custAddr: document.getElementById('pos-cust-address').value,
+        voucherCode,
+        voucherDiscount,
+        amountPaid: document.getElementById('pos-paid').value
+    });
+    localStorage.setItem('pos_held_bills', JSON.stringify(held));
+    // Clear current bill
+    currentBill = []; imeiInBill = []; hasImeiInBill = false;
+    voucherCode = ''; voucherDiscount = 0;
+    document.getElementById('pos-paid').value = '';
+    document.getElementById('pos-voucher').value = '';
+    document.getElementById('pos-cust-name').value = '';
+    document.getElementById('pos-cust-phone').value = '';
+    document.getElementById('pos-cust-nic').value = '';
+    document.getElementById('pos-cust-email').value = '';
+    document.getElementById('pos-cust-address').value = '';
+    document.getElementById('pos-cust-search').value = '';
+    document.getElementById('pos-cust-select').value = '';
+    document.getElementById('pos-customer-box').style.display = 'none';
+    document.getElementById('voucher-discount-row').style.display = 'none';
+    const custBtn = document.getElementById('btn-toggle-customer');
+    custBtn.classList.remove('btn-primary'); custBtn.classList.add('btn-outline');
+    renderBill();
+    renderHeldBills();
+    toast(`Bill held at ${label}. You can resume it anytime.`, 'warning');
+}
+
+function renderHeldBills() {
+    const held = JSON.parse(localStorage.getItem('pos_held_bills') || '[]');
+    const bar = document.getElementById('held-bills-bar');
+    const list = document.getElementById('held-bills-list');
+    if (!bar || !list) return;
+    if (!held.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    list.innerHTML = held.map(h => `
+        <div class="held-bill-chip" onclick="resumeHeldBill(${h.id})" title="Resume bill from ${h.label}">
+            <i class='bx bx-receipt'></i> ${h.label} (${h.bill.length} item${h.bill.length !== 1 ? 's' : ''})
+            <span class="del-held" onclick="event.stopPropagation(); deleteHeldBill(${h.id})" title="Discard">&#x2715;</span>
+        </div>`).join('');
+}
+
+window.resumeHeldBill = function(id) {
+    if (currentBill.length && !confirm('Current bill has items. Replace with held bill?')) return;
+    const held = JSON.parse(localStorage.getItem('pos_held_bills') || '[]');
+    const h = held.find(x => x.id === id);
+    if (!h) return;
+    // Restore bill state
+    currentBill = h.bill;
+    imeiInBill = h.imeiInBill;
+    hasImeiInBill = h.hasImeiInBill;
+    voucherCode = h.voucherCode || '';
+    voucherDiscount = h.voucherDiscount || 0;
+    document.getElementById('pos-paid').value = h.amountPaid || '';
+    document.getElementById('pos-voucher').value = h.voucherCode || '';
+    // Restore customer
+    if (h.custName) {
+        document.getElementById('pos-cust-name').value = h.custName;
+        document.getElementById('pos-cust-phone').value = h.custPhone || '';
+        document.getElementById('pos-cust-nic').value = h.custNic || '';
+        document.getElementById('pos-cust-email').value = h.custEmail || '';
+        document.getElementById('pos-cust-address').value = h.custAddr || '';
+        document.getElementById('pos-customer-box').style.display = 'block';
+        const custBtn = document.getElementById('btn-toggle-customer');
+        custBtn.classList.add('btn-primary'); custBtn.classList.remove('btn-outline');
+    }
+    // Restore cashier
+    if (h.cashier) document.getElementById('pos-cashier-select').value = h.cashier;
+    if (h.cashierCustom) document.getElementById('pos-cashier-custom').value = h.cashierCustom;
+    // Remove from held list
+    const newHeld = held.filter(x => x.id !== id);
+    localStorage.setItem('pos_held_bills', JSON.stringify(newHeld));
+    renderBill();
+    renderHeldBills();
+    toast('Bill resumed successfully!');
+};
+
+window.deleteHeldBill = function(id) {
+    if (!confirm('Discard this held bill?')) return;
+    const held = JSON.parse(localStorage.getItem('pos_held_bills') || '[]');
+    localStorage.setItem('pos_held_bills', JSON.stringify(held.filter(x => x.id !== id)));
+    renderHeldBills();
+    toast('Held bill discarded.');
+};
 
 async function loadCashiers() {
     try {
@@ -305,7 +414,7 @@ function renderBill() {
     el.innerHTML = currentBill.map((b, i) => {
         const isSim = b.category && b.category.toLowerCase().includes('sim');
         return `
-        <div class="bill-item" style="${isSim ? 'border-left: 4px solid var(--primary); background: rgba(59, 130, 246, 0.05);' : ''}">
+        <div class="bill-item" style="${isSim ? 'border-left: 4px solid var(--primary); background: var(--info-light);' : ''}">
             <div class="bill-item-info">
                 <h4>${b.name}</h4>
                 <p>
@@ -515,9 +624,9 @@ async function printReceipt(inv) {
     
     // Fetch custom invoice settings
     let invSettings = {
-        header_title: 'දකුණේ කඩේ',
-        header_subtitle: 'ගල්ලෙ',
-        header_contact: 'Mobile: 078-65000 90',
+        header_title: 'SMARTZONE',
+        header_subtitle: 'New Town Padaviya, Anuradhapura',
+        header_contact: 'Mobile: 078-68000 86',
         tax_invoice_text: 'Tax Invoice',
         label_bill_no: 'Bill No:',
         label_cashier: 'Cashier:',
@@ -556,7 +665,7 @@ async function printReceipt(inv) {
                 <span style="width:15%;text-align:center">${i.quantity}</span>
                 <span style="width:30%;text-align:right">${i.subtotal.toFixed(2)}</span>
             </div>
-            ${i.imei_number ? `<div style="font-size:10px;color:#333;margin-top:2px;font-family:monospace">IMEI: ${i.imei_number}</div>` : ''}
+            ${i.imei_number ? `<div style="font-size:10px;margin-top:2px;font-family:monospace">IMEI: ${i.imei_number}</div>` : ''}
         </div>
     `).join('');
 
@@ -576,7 +685,7 @@ async function printReceipt(inv) {
                         <h1 style="margin:0;font-size:24px;font-weight:800;text-transform:uppercase;">${labels.header_title || ''}</h1>
                         <p style="margin:2px 0;font-size:11px;font-weight:500;">${labels.header_subtitle || ''}</p>
                         <p style="margin:0;font-size:11px;font-weight:500;">${labels.header_contact || ''}</p>
-                        <div style="border-bottom:1.5px dashed #000;margin:8px 0;"></div>
+                        <div style="border-bottom:1.5px dashed var(--border);margin:8px 0;"></div>
                         <h2 style="margin:0;font-size:14px;font-weight:700;text-transform:uppercase;">${labels.tax_text || ''}</h2>
                     </div>
                 `;
@@ -600,28 +709,28 @@ async function printReceipt(inv) {
                 finalHtml += `</div>`;
             } else if (blockId === 'items') {
                 finalHtml += `
-                    <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                     <div style="display:flex;justify-content:space-between;font-weight:700;font-size:11px;margin-bottom:8px;">
                         <span style="width:55%;text-align:left">${labels.label_item || ''}</span>
                         <span style="width:15%;text-align:center">${labels.label_qty || ''}</span>
                         <span style="width:30%;text-align:right">${labels.label_amount || ''}</span>
                     </div>
-                    <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                     <div style="font-size:11px;margin-bottom:10px;">${itemsHtml}</div>
-                    <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                 `;
             } else if (blockId === 'totals') {
                 finalHtml += `
                     <div style="font-size:12px;margin-bottom:10px;">
                         <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>${labels.label_subtotal || ''}</span><span>${(inv.total_amount + (inv.discount_amount || 0)).toFixed(2)}</span></div>
-                        ${inv.discount_amount ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:#000;"><span>Discount ${inv.voucher_code ? `(${inv.voucher_code})` : ''}</span><span>-${inv.discount_amount.toFixed(2)}</span></div>` : ''}
-                        <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                        ${inv.discount_amount ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Discount ${inv.voucher_code ? `(${inv.voucher_code})` : ''}</span><span>-${inv.discount_amount.toFixed(2)}</span></div>` : ''}
+                        <div style="border-bottom:1.5px dashed var(--border);margin:6px 0;"></div>
                         <div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin:6px 0;"><span>${labels.label_total || ''}</span><span>${inv.total_amount.toFixed(2)}</span></div>
-                        <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                        <div style="border-bottom:1.5px dashed var(--border);margin:6px 0;"></div>
                         <div style="display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px;"><span>${labels.label_paid || ''}</span><span>${paid.toFixed(2)}</span></div>
                         <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;"><span>${labels.label_balance || ''}</span><span>${balance.toFixed(2)}</span></div>
                     </div>
-                    <div style="border-bottom:1.5px dashed #000;margin:10px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:10px 0;"></div>
                 `;
             } else if (blockId === 'footer') {
                 finalHtml += `
@@ -633,8 +742,8 @@ async function printReceipt(inv) {
             }
         });
             
-        finalHtml += `<div style="text-align:center;font-size:10px;margin-top:12px;border-top:1.5px dashed #000;padding-top:10px"><p style="margin:0;font-size:12px;font-family:monospace;color:#555;">Powered by SmartZone</p></div>`;
-        pa.innerHTML = `<div style="width:100%;max-width:80mm;font-family:sans-serif;color:#000;">${finalHtml}</div>`;
+        finalHtml += `<div style="text-align:center;font-size:10px;margin-top:12px;border-top:1.5px dashed var(--border);padding-top:10px"><p style="margin:0;font-size:12px;font-family:monospace;color:var(--text-muted);">Powered by SmartZone</p></div>`;
+        pa.innerHTML = `<div style="width:100%;max-width:80mm;font-family:sans-serif;">${finalHtml}</div>`;
     } else {
         pa.innerHTML = `
             <div style="width:100%;max-width:80mm;">
@@ -642,7 +751,7 @@ async function printReceipt(inv) {
                     <h1 style="margin:0;font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:1px;">${invSettings.header_title}</h1>
                     <p style="margin:2px 0;font-size:11px;font-weight:500;">${invSettings.header_subtitle}</p>
                     <p style="margin:0;font-size:11px;font-weight:500;">${invSettings.header_contact}</p>
-                    <div style="border-bottom:1.5px dashed #000;margin:8px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:8px 0;"></div>
                     <h2 style="margin:0;font-size:14px;font-weight:700;text-transform:uppercase;">${invSettings.tax_invoice_text}</h2>
                 </div>
                 
@@ -660,7 +769,7 @@ async function printReceipt(inv) {
                     </div>` : ''}
                 </div>
                 
-                <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                 
                 <div style="display:flex;justify-content:space-between;font-weight:700;font-size:11px;margin-bottom:8px;">
                     <span style="width:55%;text-align:left">${invSettings.label_item}</span>
@@ -668,13 +777,13 @@ async function printReceipt(inv) {
                     <span style="width:30%;text-align:right">${invSettings.label_amount}</span>
                 </div>
                 
-                <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                 
                 <div style="font-size:11px;margin-bottom:10px;">
                     ${itemsHtml}
                 </div>
                 
-                <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                 
                 <div style="font-size:12px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
@@ -686,12 +795,12 @@ async function printReceipt(inv) {
                         <span>Discount ${inv.voucher_code ? `(${inv.voucher_code})` : ''}</span>
                         <span>-${inv.discount_amount.toFixed(2)}</span>
                     </div>` : ''}
-                    <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:6px 0;"></div>
                     <div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin:6px 0;">
                         <span>${invSettings.label_total}</span>
                         <span>${inv.total_amount.toFixed(2)}</span>
                     </div>
-                    <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:6px 0;"></div>
                     <div style="display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px;">
                         <span>${invSettings.label_amount_paid}</span>
                         <span>${paid.toFixed(2)}</span>
@@ -702,12 +811,12 @@ async function printReceipt(inv) {
                     </div>
                 </div>
                 
-                <div style="border-bottom:1.5px dashed #000;margin:10px 0;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin:10px 0;"></div>
                 
                 <div style="text-align:center;font-size:10px;margin-top:12px;">
                     <p style="font-weight:700;font-size:14px;margin:0 0 4px 0;">${invSettings.footer_message1}</p>
                     <p style="margin:0 0 8px 0;line-height:1.3;">${invSettings.footer_message2}</p>
-                    <p style="margin:0;font-size:12px;font-family:monospace;color:#555;">Powered by SmartZone</p>
+                    <p style="margin:0;font-size:12px;font-family:monospace;color:var(--text-muted);">Powered by SmartZone</p>
                 </div>
             </div>
         `;
@@ -801,10 +910,13 @@ async function loadCustomers() {
             </tr>`).join('');
         }
         
+        // Populate POS customer dropdown (always kept up to date)
         const sel = document.getElementById('pos-cust-select');
         if (sel) {
-            sel.innerHTML = '<option value="">+ New Customer (Type below)</option>' + 
-                customers.map(c => `<option value="${c.id}">${c.name} - ${c.phone}</option>`).join('');
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="">+ New / Walk-in</option>' + 
+                customers.map(c => `<option value="${c.id}">${c.name} — ${c.phone}${c.nic_number ? ' / ' + c.nic_number : ''}</option>`).join('');
+            if (currentVal) sel.value = currentVal;
         }
     } catch(e) { console.error(e); }
 }
@@ -920,10 +1032,25 @@ async function loadSLTReport() {
     } catch(e) { console.error(e); }
 }
 
-function exportSLT() {
+async function exportSLT() {
     const month = document.getElementById('slt-month').value;
     if (!month) return toast('Select month','error');
-    window.open(`${API}/reports/slt/export?month=${month}`, '_blank');
+    try {
+        const res = await fetch(`${API}/reports/slt/export?month=${month}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) { const err = await res.json().catch(()=>({})); throw new Error(err.error || 'Export failed'); }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `SLT_Report_${month}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast('Report downloaded');
+    } catch(e) { toast(e.message, 'error'); }
 }
 
 // === REPORTS ===

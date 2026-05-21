@@ -69,4 +69,216 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
+// === SUPPLIER PAYMENTS ===
+const { SupplierPayment, Product, ImeiItem } = require('../database');
+
+// Sync all inventory products with a supplier into payment records
+router.post('/sync-inventory', async (req, res) => {
+    try {
+        const qf = req.user.role === 'admin' ? { supplier: { $ne: '' } } : { user_id: req.user._id, supplier: { $ne: '' } };
+        const productsWithSupplier = await Product.find(qf);
+        let created = 0;
+        let updated = 0;
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        for (const p of productsWithSupplier) {
+            if (!p.supplier) continue;
+            
+            let qty = p.quantity || 1;
+            let isImei = p.is_imei_tracked || false;
+            let imeiList = [];
+            
+            if (isImei) {
+                const imeis = await ImeiItem.find({ product_id: p._id, status: 'In Stock' });
+                qty = imeis.length;
+                imeiList = imeis.map(i => i.imei_number);
+            }
+            if (qty === 0) continue; // Don't create empty records
+
+            const totalAmount = (p.cost_price || 0) * qty;
+
+            // Check if a payment record already exists for this product+supplier
+            const existing = await SupplierPayment.findOne({ supplier_name: p.supplier, product_name: p.name, user_id: req.user._id });
+            if (!existing) {
+                const paidAmount = p.is_supplier_paid ? totalAmount : 0;
+                await SupplierPayment.create({
+                    user_id: req.user._id,
+                    supplier_name: p.supplier,
+                    product_name: p.name,
+                    quantity: qty,
+                    cost_price: p.cost_price || 0,
+                    total_amount: totalAmount,
+                    paid_amount: paidAmount,
+                    is_paid: p.is_supplier_paid && totalAmount > 0,
+                    paid_date: (p.is_supplier_paid && totalAmount > 0) ? today : '',
+                    sale_date: today,
+                    notes: 'Auto-synced from inventory',
+                    is_imei_product: isImei,
+                    imei_numbers: imeiList,
+                    paid_imeis: p.is_supplier_paid ? imeiList : []
+                });
+                created++;
+            } else if (isImei && existing.imei_numbers.length !== imeiList.length) {
+                // Update existing record with new IMEI stock
+                existing.quantity = qty;
+                existing.total_amount = totalAmount;
+                existing.imei_numbers = imeiList;
+                existing.is_imei_product = true;
+                if (existing.paid_amount >= totalAmount) {
+                    existing.is_paid = true;
+                    if (!existing.paid_date) existing.paid_date = today;
+                } else {
+                    existing.is_paid = false;
+                }
+                await existing.save();
+                updated++;
+            }
+        }
+        res.json({ message: `Synced. ${created} created, ${updated} updated.`, created, updated });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/payments', async (req, res) => {
+    try {
+        const qf = req.user.role === 'admin' ? {} : { user_id: req.user._id };
+        const { supplier, status } = req.query;
+        if (supplier) qf.supplier_name = supplier;
+        if (status === 'paid') qf.is_paid = true;
+        else if (status === 'unpaid') qf.is_paid = false;
+        const payments = await SupplierPayment.find(qf).sort({ sale_date: -1 });
+        res.json(payments.map(p => ({
+            id: p._id.toString(),
+            supplier_name: p.supplier_name,
+            invoice_number: p.invoice_number || '',
+            product_name: p.product_name,
+            quantity: p.quantity,
+            cost_price: p.cost_price,
+            total_amount: p.total_amount,
+            paid_amount: p.paid_amount || 0,
+            selling_price: p.selling_price,
+            sale_date: p.sale_date,
+            is_paid: p.is_paid,
+            paid_date: p.paid_date || '',
+            notes: p.notes || '',
+            is_imei_product: p.is_imei_product || false,
+            imei_numbers: p.imei_numbers || [],
+            paid_imeis: p.paid_imeis || []
+        })));
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/payments/:id/pay', async (req, res) => {
+    try {
+        const payment = await SupplierPayment.findById(req.params.id);
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+        
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        
+        const { amount, notes, paid_imeis } = req.body;
+        
+        let newPaid = payment.paid_amount;
+        if (amount !== undefined) {
+            newPaid += parseFloat(amount) || 0;
+        } else {
+            newPaid = payment.total_amount; // fallback to full payment
+        }
+        
+        payment.paid_amount = newPaid;
+        
+        if (paid_imeis && Array.isArray(paid_imeis)) {
+            const currentPaid = new Set(payment.paid_imeis || []);
+            paid_imeis.forEach(imei => currentPaid.add(imei));
+            payment.paid_imeis = Array.from(currentPaid);
+        }
+        
+        if (payment.paid_amount >= payment.total_amount) {
+            payment.is_paid = true;
+            payment.paid_date = today;
+            // If fully paid, mark all as paid
+            if (payment.is_imei_product) {
+                payment.paid_imeis = payment.imei_numbers;
+            }
+        }
+        if (notes) payment.notes = payment.notes ? payment.notes + ' | ' + notes : notes;
+        
+        await payment.save();
+        res.json({ message: 'Payment updated', payment });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Manually add a supplier payment record
+router.post('/payments', async (req, res) => {
+    try {
+        const { supplier_name, product_name, quantity, cost_price, total_amount, paid_amount, notes } = req.body;
+        if (!supplier_name) return res.status(400).json({ error: 'Supplier Name is required' });
+        
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        
+        const payment = await SupplierPayment.create({
+            user_id: req.user._id,
+            supplier_name,
+            product_name: product_name || 'Manual Entry',
+            quantity: quantity || 1,
+            cost_price: cost_price || 0,
+            total_amount: total_amount || 0,
+            paid_amount: paid_amount || 0,
+            is_paid: (paid_amount || 0) >= (total_amount || 0) && (total_amount || 0) > 0,
+            paid_date: (paid_amount || 0) >= (total_amount || 0) && (total_amount || 0) > 0 ? today : '',
+            sale_date: today,
+            notes: notes || 'Manually added record'
+        });
+        res.status(201).json({ message: 'Payment record added', payment });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Update a supplier payment record (Edit)
+router.put('/payments/:id', async (req, res) => {
+    try {
+        const { supplier_name, product_name, quantity, cost_price, total_amount, paid_amount, notes } = req.body;
+        const payment = await SupplierPayment.findById(req.params.id);
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+        
+        if (supplier_name) payment.supplier_name = supplier_name;
+        if (product_name) payment.product_name = product_name;
+        if (quantity !== undefined) payment.quantity = quantity;
+        if (cost_price !== undefined) payment.cost_price = cost_price;
+        if (total_amount !== undefined) payment.total_amount = total_amount;
+        if (paid_amount !== undefined) payment.paid_amount = paid_amount;
+        if (notes !== undefined) payment.notes = notes;
+        
+        if (payment.paid_amount >= payment.total_amount && payment.total_amount > 0) {
+            payment.is_paid = true;
+            if (!payment.paid_date) {
+                payment.paid_date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+            }
+        } else {
+            payment.is_paid = false;
+            payment.paid_date = '';
+        }
+        
+        await payment.save();
+        res.json({ message: 'Payment updated', payment });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete a supplier payment record
+router.delete('/payments/:id', async (req, res) => {
+    try {
+        const payment = await SupplierPayment.findByIdAndDelete(req.params.id);
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+        res.json({ message: 'Payment record deleted' });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

@@ -7,15 +7,16 @@ let hasImeiInBill = false;
 let scanModeActive = false;
 let voucherDiscount = 0;
 let voucherCode = '';
+let previousPendingCount = 0;
 
 // === UTILITY ===
 function toast(msg, type='success') {
     const c = document.getElementById('toast-container');
     const t = document.createElement('div');
     t.style.cssText = `padding:12px 18px;border-radius:10px;color:#fff;font-weight:500;font-size:13px;
-        box-shadow:0 8px 24px rgba(0,0,0,0.18);opacity:0;transform:translateY(-20px);
+        box-shadow:var(--shadow-lg);opacity:0;transform:translateY(-20px);
         transition:all 0.4s ease;display:flex;align-items:center;gap:8px;max-width:360px;
-        background:${type==='success'?'linear-gradient(135deg,#10b981,#059669)':type==='scan'?'linear-gradient(135deg,#3b82f6,#2563eb)':'linear-gradient(135deg,#ef4444,#dc2626)'}`;
+        background:${type==='success'?'linear-gradient(135deg,var(--success),var(--primary-hover))':type==='scan'?'linear-gradient(135deg,var(--info),#2563eb)':'linear-gradient(135deg,var(--danger),#dc2626)'}`;
     const icon = type==='success'?'bx-check-circle':type==='scan'?'bx-barcode':'bx-error-circle';
     t.innerHTML = `<i class='bx ${icon}'></i>${msg}`;
     c.appendChild(t);
@@ -162,7 +163,7 @@ window.openInvoiceSettingsModal = async function() {
         const p = await res.json();
         const inv = p.invoice_settings || {};
         document.getElementById('inv-set-title').value = inv.header_title || 'දකුණේ කඩේ';
-        document.getElementById('inv-set-subtitle').value = inv.header_subtitle || 'ඨ්කකැ';
+        document.getElementById('inv-set-subtitle').value = inv.header_subtitle || 'Galle';
         document.getElementById('inv-set-contact').value = inv.header_contact || 'Mobile: 078-65000 90';
         
         document.getElementById('inv-set-tax').value = inv.tax_invoice_text || 'Tax Invoice';
@@ -275,7 +276,7 @@ function setupNav() {
             if(target==='design-view') loadInvoiceDesigner();
             if(target==='reports-view') loadReports('sales');
             if(target==='vouchers-view') loadVouchers();
-            if(target==='admin-view') loadAdmin();
+            if(target==='admin-view') { loadAdmin(); document.getElementById('admin-notify-dot').style.display='none'; previousPendingCount=0; }
             if(target==='barcode-view') loadBarcodePrinter();
             if(target==='slt-view') { /* ready for generate */ }
         };
@@ -419,6 +420,16 @@ async function loadSuppliers() {
                 suppliers.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
             if (currentVal && suppliers.some(s => s.name === currentVal)) prodSup.value = currentVal;
         }
+
+        // Populate supplier payment filter dropdown
+        const supPayFilter = document.getElementById('sup-payment-supplier-filter');
+        if (supPayFilter) {
+            supPayFilter.innerHTML = '<option value="">All Suppliers</option>' +
+                suppliers.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+        }
+
+        // Load supplier payments
+        loadSupplierPayments();
     } catch(e) { console.error(e); }
 }
 
@@ -450,6 +461,29 @@ function setupSupplierModal() {
             closeModal('modal-supplier'); loadSuppliers();
         } catch(e) { toast(e.message, 'error'); }
     };
+
+    // Supplier payment filters
+    document.getElementById('sup-payment-filter').onchange = loadSupplierPayments;
+    document.getElementById('sup-payment-supplier-filter').onchange = loadSupplierPayments;
+
+    // Sync all inventory products with suppliers into payment records
+    document.getElementById('btn-sync-inventory')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-sync-inventory');
+        btn.disabled = true;
+        btn.innerHTML = "<i class='bx bx-loader bx-spin'></i> Syncing...";
+        try {
+            const res = await api('/suppliers/sync-inventory', { method: 'POST' });
+            if (!res) return;
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error);
+            toast(d.message);
+            loadSupplierPayments();
+        } catch(e) { toast(e.message, 'error'); }
+        finally {
+            btn.disabled = false;
+            btn.innerHTML = "<i class='bx bx-refresh'></i> Sync Inventory";
+        }
+    });
 }
 
 async function editSupplier(id) {
@@ -554,15 +588,15 @@ function renderBuilderBlocks() {
         }
 
         const blockEl = document.createElement('div');
-        blockEl.style.border = '1px solid #eee';
+        blockEl.style.border = '1px solid var(--border)';
         blockEl.style.borderRadius = '6px';
         blockEl.style.overflow = 'hidden';
         
         blockEl.innerHTML = `
-            <div style="background:#f8fafc;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+            <div style="background:var(--secondary);padding:8px 10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-radius:6px 6px 0 0">
                 <div style="display:flex;align-items:center;gap:10px" onclick="toggleSettings('${blockId}')">
-                    <i class='bx bx-dots-vertical-rounded' style="color:#aaa"></i>
-                    <span style="font-weight:600;font-size:13px;color:${isVis?'#333':'#aaa'}">${blockNames[blockId]}</span>
+                    <i class='bx bx-dots-vertical-rounded' style="color:var(--text-muted)"></i>
+                    <span style="font-weight:600;font-size:13px;color:${isVis?'var(--text-main)':'var(--text-muted)'}">${blockNames[blockId]}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:5px">
                     <button class="btn btn-sm btn-outline" style="padding:2px 5px" onclick="moveBlock(${index}, -1)" ${index===0?'disabled':''}><i class='bx bx-up-arrow-alt'></i></button>
@@ -570,7 +604,7 @@ function renderBuilderBlocks() {
                     <button class="btn btn-sm ${isVis?'btn-primary':'btn-outline'}" style="padding:2px 5px" onclick="toggleVis('${blockId}')"><i class='bx ${isVis?'bx-show':'bx-hide'}'></i></button>
                 </div>
             </div>
-            <div id="settings-${blockId}" style="display:none;padding:10px;background:#fff;border-top:1px solid #eee">
+            <div id="settings-${blockId}" style="display:none;padding:10px;background:var(--bg-card);border-top:1px solid var(--border)">
                 ${settingsHtml}
             </div>
         `;
@@ -615,7 +649,7 @@ function updateLivePreview() {
                     <h1 style="margin:0;font-size:24px;font-weight:800;text-transform:uppercase;">${currentLabels.header_title}</h1>
                     <p style="margin:2px 0;font-size:11px;font-weight:500;">${currentLabels.header_subtitle}</p>
                     <p style="margin:0;font-size:11px;font-weight:500;">${currentLabels.header_contact}</p>
-                    <div style="border-bottom:1.5px dashed #000;margin:8px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:8px 0;"></div>
                     <h2 style="margin:0;font-size:14px;font-weight:700;text-transform:uppercase;">${currentLabels.tax_text}</h2>
                 </div>
             `;
@@ -631,38 +665,38 @@ function updateLivePreview() {
                 <div style="font-size:11px;font-weight:500;margin-bottom:8px;">
                     <div style="margin-bottom:4px;">${currentLabels.label_cashier} <strong>Smart Zone</strong></div>
                     <div style="margin-top:6px;">
-                        <div style="font-weight:700;">${currentLabels.label_customer} pamidu</div>
+                        <div style="font-weight:700;">${currentLabels.label_customer} Pamidu</div>
                         <div>${currentLabels.label_tel} 0786800086</div>
                     </div>
                 </div>
             `;
         } else if (blockId === 'items') {
             previewHtml += `
-                <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                 <div style="display:flex;justify-content:space-between;font-weight:700;font-size:11px;margin-bottom:8px;">
                     <span style="width:55%;">${currentLabels.label_item}</span>
                     <span style="width:15%;text-align:center">${currentLabels.label_qty}</span>
                     <span style="width:30%;text-align:right">${currentLabels.label_amount}</span>
                 </div>
-                <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
                 <div style="font-size:11px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;margin-bottom:4px">
                         <span style="width:55%;">Sample Router</span><span style="width:15%;text-align:center">1</span><span style="width:30%;text-align:right">15000.00</span>
                     </div>
                 </div>
-                <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin-bottom:8px;"></div>
             `;
         } else if (blockId === 'totals') {
             previewHtml += `
                 <div style="font-size:12px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>${currentLabels.label_subtotal}</span><span>15000.00</span></div>
-                    <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:6px 0;"></div>
                     <div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin:6px 0;"><span>${currentLabels.label_total}</span><span>15000.00</span></div>
-                    <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                    <div style="border-bottom:1.5px dashed var(--border);margin:6px 0;"></div>
                     <div style="display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px;"><span>${currentLabels.label_paid}</span><span>15000.00</span></div>
                     <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;"><span>${currentLabels.label_balance}</span><span>0.00</span></div>
                 </div>
-                <div style="border-bottom:1.5px dashed #000;margin:10px 0;"></div>
+                <div style="border-bottom:1.5px dashed var(--border);margin:10px 0;"></div>
             `;
         } else if (blockId === 'footer') {
             previewHtml += `
@@ -674,8 +708,8 @@ function updateLivePreview() {
         }
     });
 
-    previewHtml += `<div style="text-align:center;font-size:10px;margin-top:12px;border-top:1.5px dashed #000;padding-top:10px"><p style="margin:0;font-size:12px;font-family:monospace;color:#555;">Powered by SmartZone</p></div>`;
-    document.getElementById('tpl-preview').innerHTML = `<div style="width:100%;max-width:80mm;margin:0 auto;font-family:sans-serif;color:#000">${previewHtml}</div>`;
+    previewHtml += `<div style="text-align:center;font-size:10px;margin-top:12px;border-top:1.5px dashed var(--border);padding-top:10px"><p style="margin:0;font-size:12px;font-family:monospace;color:var(--text-muted);">Powered by SmartZone</p></div>`;
+    document.getElementById('tpl-preview').innerHTML = `<div style="width:100%;max-width:80mm;margin:0 auto;font-family:sans-serif;color:var(--text-main)">${previewHtml}</div>`;
 }
 
 function setupDesigner() {
@@ -812,15 +846,16 @@ async function loadBarcodePrinter() {
         const tb = document.querySelector('#barcode-print-table tbody');
         if (tb) {
             if (filtered.length === 0) {
-                tb.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-muted)">No products found</td></tr>';
+                tb.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">No products found</td></tr>';
                 return;
             }
             tb.innerHTML = filtered.map(p => `
-                <tr onclick="addToPrintQueue('${p.name.replace(/'/g, "\\'")}', '${p.barcode||''}', ${p.price})" style="cursor:pointer">
+                <tr style="cursor:pointer">
                     <td><strong>${p.name}</strong></td>
                     <td><code style="background:var(--bg-soft);padding:2px 6px;border-radius:4px;font-size:12px">${p.barcode || '<span style="color:var(--danger)">No Barcode</span>'}</code></td>
+                    <td><input type="number" class="form-control" data-bc-id="${p.id}" value="${document.getElementById('barcode-copies').value || 10}" min="1" style="width:60px;padding:4px;font-size:12px" onclick="event.stopPropagation()"></td>
                     <td style="text-align:right">
-                        <button class="btn btn-sm btn-outline">
+                        <button class="btn btn-sm btn-outline" onclick="addToPrintQueue('${p.name.replace(/'/g, "\\'")}', '${p.barcode||''}', ${p.price}, this.closest('tr').querySelector('[data-bc-id]').value)">
                             <i class='bx bx-plus'></i> Add
                         </button>
                     </td>
@@ -829,16 +864,17 @@ async function loadBarcodePrinter() {
     } catch(e) { console.error(e); }
 }
 
-window.addToPrintQueue = function(name, barcode, price) {
-    if (!barcode) return toast('This product has no barcode. Please edit it first.', 'error');
+window.addToPrintQueue = function(name, barcode, price, customQty) {
+    if (!barcode || !barcode.trim()) return toast('This product has no barcode. Please edit it first.', 'error');
+    barcode = barcode.trim();
     const existing = printQueue.find(item => item.barcode === barcode);
-    const qty = parseInt(document.getElementById('barcode-copies').value) || 10;
+    const qty = parseInt(customQty) || parseInt(document.getElementById('barcode-copies').value) || 10;
     if (existing) {
         existing.qty += qty;
     } else {
         printQueue.push({ name, barcode, price, qty });
     }
-    toast(`Added ${name} to queue`);
+    toast(`Added ${name} (${qty} copies) to queue`);
     renderPrintQueue();
 };
 
@@ -977,7 +1013,7 @@ function setupAll() {
     initTheme(); checkAuth(); updateClock(); setInterval(updateClock, 1000);
     setupNav(); setupProductModal(); setupImeiModal(); setupCustomerModal(); setupSupplierModal(); setupDesigner();
     setupPOS(); setupWarranty(); setupSLT(); setupStatusModal(); setupInvoiceFilters(); setupReportTabs();
-    setupBarcodePrinter(); setupVoucherModal();
+    setupBarcodePrinter(); setupVoucherModal(); setupCustomerSearch();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -986,6 +1022,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-scan-mode').onclick = toggleScanMode;
     // Admin edit save button
     document.getElementById('btn-save-admin-edit').onclick = saveAdminEdit;
+
+    // Check for pending registrations (admin notification)
+    checkPendingRegistrations();
+    setInterval(checkPendingRegistrations, 30000); // Check every 30s
     // Clear bill button
     document.getElementById('btn-clear-bill').onclick = () => {
         if (currentBill.length && !confirm('Clear the current bill?')) return;
@@ -1098,4 +1138,451 @@ window.deleteVoucher = async function(id) {
         toast('Voucher deleted');
         loadVouchers();
     } catch (e) { toast(e.message, 'error'); }
+};
+
+// === SUPPLIER PAYMENTS ===
+let supplierPaymentsList = [];
+async function loadSupplierPayments() {
+    try {
+        const statusFilter = document.getElementById('sup-payment-filter')?.value || '';
+        const supplierFilter = document.getElementById('sup-payment-supplier-filter')?.value || '';
+        let url = '/suppliers/payments?';
+        if (statusFilter) url += `status=${statusFilter}&`;
+        if (supplierFilter) url += `supplier=${encodeURIComponent(supplierFilter)}&`;
+        url += `_t=${Date.now()}`;
+        const res = await api(url);
+        if (!res) return;
+        supplierPaymentsList = await res.json();
+        const payments = supplierPaymentsList;
+
+        // Summary
+        const totalOwed = payments.filter(p => !p.is_paid).reduce((s, p) => s + (p.total_amount - (p.paid_amount || 0)), 0);
+        const totalPaid = payments.reduce((s, p) => s + (p.paid_amount || 0), 0);
+        const unpaidCount = payments.filter(p => !p.is_paid).length;
+        const summaryEl = document.getElementById('sup-payment-summary');
+        if (summaryEl) {
+            summaryEl.innerHTML = `
+                <div><strong style="color:var(--danger)">Remaining Balance:</strong> Rs. ${totalOwed.toLocaleString()} (${unpaidCount} items)</div>
+                <div><strong style="color:var(--success)">Total Paid:</strong> Rs. ${totalPaid.toLocaleString()}</div>
+            `;
+        }
+
+        const tb = document.querySelector('#sup-payments-table tbody');
+        if (!tb) return;
+        if (payments.length === 0) {
+            tb.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)"><i class="bx bx-receipt" style="font-size:24px;display:block;margin-bottom:8px"></i>No supplier payments found</td></tr>';
+            return;
+        }
+        tb.innerHTML = payments.map(p => {
+            const paid = p.paid_amount || 0;
+            const remaining = p.total_amount - paid;
+            const supplierOwes = remaining < 0; // supplier owes us money
+            return `<tr class="${supplierOwes ? 'supplier-owes-row' : (!p.is_paid ? '' : '')}" style="${(!supplierOwes && !p.is_paid) ? 'background:var(--danger-light)' : ''}">
+            <td><strong>${p.supplier_name}</strong></td>
+            <td>${p.product_name}</td>
+            <td>${p.quantity}</td>
+            <td>Rs. ${p.cost_price.toLocaleString()}</td>
+            <td>
+                <div>Total: Rs. ${p.total_amount.toLocaleString()}</div>
+                <div style="font-size:11px;color:var(--success)">Paid: Rs. ${paid.toLocaleString()}</div>
+                ${remaining > 0 ? 
+                    `<strong style="color:var(--danger)">Rem: Rs. ${remaining.toLocaleString()}</strong>` : 
+                 remaining < 0 ? 
+                    `<strong style="color:var(--danger)">⚠ Supplier Owes: Rs. ${Math.abs(remaining).toLocaleString()}</strong>` :
+                    `<strong style="color:var(--success)">Cleared</strong>`}
+            </td>
+            <td>${p.sale_date || '-'}</td>
+            <td><code style="font-size:11px">${p.invoice_number || '-'}</code></td>
+            <td>${p.is_paid ?
+                `<span class="badge badge-green">Paid</span><br><small style="color:var(--text-muted)">${p.paid_date}</small>` :
+                '<span class="badge badge-red">Unpaid</span>'}</td>
+            <td>
+                ${!p.is_paid ?
+                `<button class="btn btn-sm btn-success" style="margin-bottom:4px;width:100%" onclick="openSupplierPayModal('${p.id}')"><i class='bx bx-money'></i> Pay</button>` :
+                '<span style="color:var(--text-muted);font-size:12px;display:block;margin-bottom:4px">✓ Settled</span>'}
+                <button class="btn btn-sm btn-outline" style="padding:2px 6px" onclick="printSupplierReceiptById('${p.id}')" title="Print Receipt"><i class='bx bx-printer'></i></button>
+                <button class="btn btn-sm btn-outline" style="padding:2px 6px" onclick="editSupplierRecord('${p.id}')"><i class='bx bx-edit'></i></button>
+                <button class="btn btn-sm btn-danger" style="padding:2px 6px" onclick="deleteSupplierRecord('${p.id}')"><i class='bx bx-trash'></i></button>
+            </td>
+        </tr>`}).join('');
+    } catch(e) { console.error(e); }
+}
+
+window.openSupplierPayModal = function(id) {
+    const p = supplierPaymentsList.find(x => x.id === id);
+    if (!p) return;
+    const paid = p.paid_amount || 0;
+    const rem = p.total_amount - paid;
+    
+    document.getElementById('sup-pay-id').value = id;
+    document.getElementById('sup-pay-total').value = 'Rs. ' + parseFloat(p.total_amount).toLocaleString();
+    document.getElementById('sup-pay-rem').value = 'Rs. ' + parseFloat(rem).toLocaleString();
+    document.getElementById('sup-pay-amount').value = rem;
+    document.getElementById('sup-pay-notes').value = '';
+    
+    const imeiSec = document.getElementById('sup-pay-imei-section');
+    const imeiList = document.getElementById('sup-pay-imei-list');
+    if (p.is_imei_product && p.imei_numbers && p.imei_numbers.length > 0) {
+        imeiSec.style.display = 'block';
+        const unpaidImeis = p.imei_numbers.filter(i => !(p.paid_imeis || []).includes(i));
+        if (unpaidImeis.length === 0) {
+            imeiList.innerHTML = '<span style="font-size:12px;color:var(--success)">All IMEIs paid.</span>';
+        } else {
+            imeiList.innerHTML = unpaidImeis.map(imei => `
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;background:var(--bg-card);padding:4px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer">
+                    <input type="checkbox" class="sup-pay-imei-cb" value="${imei}" data-cost="${p.cost_price}">
+                    ${imei} (Rs. ${p.cost_price.toLocaleString()})
+                </label>
+            `).join('');
+            
+            // Auto-update amount when checkboxes change
+            document.querySelectorAll('.sup-pay-imei-cb').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const checked = document.querySelectorAll('.sup-pay-imei-cb:checked');
+                    if (checked.length > 0) {
+                        let total = 0;
+                        checked.forEach(c => total += parseFloat(c.dataset.cost));
+                        document.getElementById('sup-pay-amount').value = total;
+                    } else {
+                        document.getElementById('sup-pay-amount').value = rem;
+                    }
+                });
+            });
+        }
+    } else {
+        imeiSec.style.display = 'none';
+        imeiList.innerHTML = '';
+    }
+    
+    openModal('modal-supplier-pay');
+};
+
+document.getElementById('btn-submit-sup-pay')?.addEventListener('click', async () => {
+    const id = document.getElementById('sup-pay-id').value;
+    const amount = parseFloat(document.getElementById('sup-pay-amount').value);
+    const notes = document.getElementById('sup-pay-notes').value.trim();
+    
+    // Gather checked IMEIs if any
+    const paid_imeis = Array.from(document.querySelectorAll('.sup-pay-imei-cb:checked')).map(cb => cb.value);
+    
+    if (isNaN(amount) || amount <= 0) return toast('Please enter a valid amount', 'error');
+    
+    try {
+        const res = await api(`/suppliers/payments/${id}/pay`, { 
+            method: 'PUT', 
+            body: JSON.stringify({ amount, notes, paid_imeis }) 
+        });
+        if (!res) return;
+        if (!res.ok) throw new Error('Failed to submit payment');
+        const paymentRes = await res.json();
+        
+        toast('Payment submitted successfully');
+        closeModal('modal-supplier-pay');
+        await loadSupplierPayments();
+        
+        // Find the updated payment object for printing
+        const p = supplierPaymentsList.find(x => x.id === id);
+        if (p) printSupplierReceipt(paymentRes.payment || p, amount, paid_imeis);
+    } catch(e) { toast(e.message, 'error'); }
+});
+
+window.printSupplierReceiptById = function(id) {
+    const p = supplierPaymentsList.find(x => x.id === id);
+    if (p) printSupplierReceipt(p, 0, []);
+};
+
+window.printSupplierReceipt = function(p, paidNow = 0, paidImeisNow = []) {
+    const pa = document.getElementById('print-area');
+    if (!pa) return;
+    
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    let imeiHtml = '';
+    if (paidImeisNow && paidImeisNow.length > 0) {
+        paidImeisNow.forEach(imei => {
+            imeiHtml += `<div style="font-size:10px;color:#333;margin-top:2px;font-family:monospace">IMEI: ${imei}</div>`;
+        });
+    } else if (p.is_imei_product && p.paid_imeis && p.paid_imeis.length > 0) {
+        p.paid_imeis.forEach(imei => {
+            imeiHtml += `<div style="font-size:10px;color:#333;margin-top:2px;font-family:monospace">IMEI: ${imei}</div>`;
+        });
+    }
+
+    let displayQty = paidImeisNow && paidImeisNow.length > 0 ? paidImeisNow.length : p.quantity;
+    let displayAmt = paidImeisNow && paidImeisNow.length > 0 ? paidNow : p.total_amount;
+
+    pa.innerHTML = `
+        <div style="width:100%;max-width:80mm;font-family:sans-serif;color:#000;">
+            <div style="text-align:center;margin-bottom:12px;">
+                <h1 style="margin:0;font-size:18px;font-weight:800;text-transform:uppercase;">PAYMENT VOUCHER</h1>
+                <p style="margin:2px 0;font-size:11px;font-weight:500;">SmartZone</p>
+                <div style="border-bottom:1.5px dashed #000;margin:8px 0;"></div>
+            </div>
+            
+            <div style="font-size:11px;font-weight:500;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span>Date: ${today}</span>
+                    <span>Time: ${time}</span>
+                </div>
+                <div style="margin-top:6px;"><div style="font-weight:700;">Supplier: ${p.supplier_name}</div></div>
+                ${p.invoice_number ? `<div style="margin-top:2px;">Invoice: ${p.invoice_number}</div>` : ''}
+            </div>
+            
+            <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+            <div style="display:flex;justify-content:space-between;font-weight:700;font-size:11px;margin-bottom:8px;">
+                <span style="width:55%;text-align:left">Item</span>
+                <span style="width:15%;text-align:center">Qty</span>
+                <span style="width:30%;text-align:right">Amount</span>
+            </div>
+            <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+            
+            <div style="font-size:11px;margin-bottom:10px;">
+                <div style="margin-bottom:6px;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                        <span style="width:55%;word-break:break-word;padding-right:4px">${p.product_name}</span>
+                        <span style="width:15%;text-align:center">${displayQty}</span>
+                        <span style="width:30%;text-align:right">${displayAmt.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                    </div>
+                    ${imeiHtml}
+                </div>
+            </div>
+            <div style="border-bottom:1.5px dashed #000;margin-bottom:8px;"></div>
+            
+            <div style="font-size:12px;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span>Total Bill:</span>
+                    <span>Rs. ${p.total_amount.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-weight:bold;">
+                    <span>Total Paid So Far:</span>
+                    <span>Rs. ${(p.paid_amount || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                ${paidNow > 0 ? `
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;color:#000;">
+                    <span>Paid in this transaction:</span>
+                    <span>Rs. ${paidNow.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>` : ''}
+                <div style="border-bottom:1.5px dashed #000;margin:6px 0;"></div>
+                <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;">
+                    <span>Remaining Bal:</span>
+                    <span>Rs. ${Math.max(0, p.total_amount - (p.paid_amount || 0)).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+            </div>
+            <div style="border-bottom:1.5px dashed #000;margin:10px 0;"></div>
+            
+            <div style="text-align:center;font-size:10px;margin-top:12px;">
+                <p style="margin:0 0 8px 0;">Supplier Payment Record</p>
+                <div style="border-top:1.5px dashed #000;padding-top:10px;margin-top:8px">
+                    <p style="margin:0;font-size:12px;font-family:monospace;color:#555;">Powered by SmartZone</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    pa.style.display = 'block';
+    
+    setTimeout(() => { 
+        window.print(); 
+        pa.style.display = 'none'; 
+    }, 300);
+};
+
+document.getElementById('btn-add-sup-payment')?.addEventListener('click', () => {
+    document.getElementById('supplier-record-form').reset();
+    document.getElementById('sup-rec-id').value = '';
+    document.getElementById('sup-record-title').innerHTML = "<i class='bx bx-list-plus' style='color:var(--primary)'></i> Add Supplier Record";
+    
+    // Populate datalist with unique supplier names
+    const names = [...new Set(suppliers.map(s => s.name))];
+    const dl = document.getElementById('sup-rec-supplier-list');
+    if (dl) dl.innerHTML = names.map(n => `<option value="${n}">`).join('');
+    
+    openModal('modal-supplier-record');
+});
+
+window.editSupplierRecord = function(id) {
+    const p = supplierPaymentsList.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('sup-rec-id').value = id;
+    document.getElementById('sup-rec-supplier').value = p.supplier_name || '';
+    document.getElementById('sup-rec-product').value = p.product_name || '';
+    document.getElementById('sup-rec-qty').value = p.quantity || 1;
+    document.getElementById('sup-rec-cost').value = p.cost_price || 0;
+    document.getElementById('sup-rec-total').value = p.total_amount || 0;
+    document.getElementById('sup-rec-paid').value = p.paid_amount || 0;
+    document.getElementById('sup-rec-notes').value = p.notes || '';
+    
+    const names = [...new Set(suppliers.map(s => s.name))];
+    const dl = document.getElementById('sup-rec-supplier-list');
+    if (dl) dl.innerHTML = names.map(n => `<option value="${n}">`).join('');
+    
+    document.getElementById('sup-record-title').innerHTML = "<i class='bx bx-edit' style='color:var(--primary)'></i> Edit Supplier Record";
+    openModal('modal-supplier-record');
+};
+
+window.deleteSupplierRecord = async function(id) {
+    if (!confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) return;
+    try {
+        const res = await api(`/suppliers/payments/${id}`, { method: 'DELETE' });
+        if (!res) return;
+        if (!res.ok) throw new Error('Failed to delete payment record');
+        toast('Record deleted successfully');
+        loadSupplierPayments();
+    } catch (e) { toast(e.message, 'error'); }
+};
+
+document.getElementById('btn-save-sup-record')?.addEventListener('click', async () => {
+    const id = document.getElementById('sup-rec-id').value;
+    const payload = {
+        supplier_name: document.getElementById('sup-rec-supplier').value.trim(),
+        product_name: document.getElementById('sup-rec-product').value.trim(),
+        quantity: parseInt(document.getElementById('sup-rec-qty').value) || 1,
+        cost_price: parseFloat(document.getElementById('sup-rec-cost').value) || 0,
+        total_amount: parseFloat(document.getElementById('sup-rec-total').value) || 0,
+        paid_amount: parseFloat(document.getElementById('sup-rec-paid').value) || 0,
+        notes: document.getElementById('sup-rec-notes').value.trim()
+    };
+    
+    if (!payload.supplier_name) return toast('Supplier Name is required', 'error');
+    if (isNaN(payload.total_amount)) return toast('Total Amount is required', 'error');
+    
+    try {
+        const res = await api(id ? `/suppliers/payments/${id}` : '/suppliers/payments', {
+            method: id ? 'PUT' : 'POST',
+            body: JSON.stringify(payload)
+        });
+        if (!res) return;
+        if (!res.ok) throw new Error('Failed to save record');
+        toast(id ? 'Record updated' : 'Record added successfully');
+        closeModal('modal-supplier-record');
+        loadSupplierPayments();
+    } catch(e) { toast(e.message, 'error'); }
+});
+
+// === ADMIN PENDING REGISTRATION NOTIFICATION ===
+function playAdminNotificationSound() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+        setTimeout(() => ctx.close(), 1000);
+    } catch(e) { /* silent */ }
+}
+
+async function checkPendingRegistrations() {
+    if (role !== 'admin') return;
+    try {
+        const res = await api('/admin/pending-count');
+        if (!res || !res.ok) return;
+        const data = await res.json();
+        const dot = document.getElementById('admin-notify-dot');
+        if (dot) {
+            if (data.count > 0) {
+                dot.style.display = 'inline-block';
+                dot.title = `${data.count} pending registration(s)`;
+                if (data.count > previousPendingCount) {
+                    playAdminNotificationSound();
+                }
+            } else {
+                dot.style.display = 'none';
+            }
+        }
+        previousPendingCount = data.count;
+    } catch(e) { /* silent */ }
+}
+
+// === CUSTOMER SEARCH IN POS ===
+function setupCustomerSearch() {
+    const searchInput = document.getElementById('pos-cust-search');
+    if (!searchInput) return;
+
+    searchInput.addEventListener('input', function() {
+        const q = this.value.toLowerCase().trim();
+        const resultsDiv = document.getElementById('pos-cust-search-results');
+        if (!q || q.length < 2) { resultsDiv.style.display = 'none'; return; }
+
+        const filtered = customers.filter(c =>
+            c.name.toLowerCase().includes(q) ||
+            c.phone.includes(q) ||
+            (c.nic_number && c.nic_number.toLowerCase().includes(q))
+        ).slice(0, 8);
+
+        if (filtered.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:13px">No customers found</div>';
+        } else {
+            resultsDiv.innerHTML = filtered.map(c => `
+                <div class="cust-search-item" onclick="selectCustomerFromSearch('${c.id}')">
+                    <div style="font-weight:600">${c.name}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${c.phone} ${c.nic_number ? '• NIC: ' + c.nic_number : ''}</div>
+                </div>
+            `).join('');
+        }
+        resultsDiv.style.display = 'block';
+    });
+
+    // Close on click outside
+    document.addEventListener('click', function(e) {
+        const resultsDiv = document.getElementById('pos-cust-search-results');
+        if (resultsDiv && !e.target.closest('#pos-cust-search') && !e.target.closest('#pos-cust-search-results')) {
+            resultsDiv.style.display = 'none';
+        }
+    });
+}
+
+window.selectCustomerFromSearch = function(id) {
+    const c = customers.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('pos-cust-name').value = c.name;
+    document.getElementById('pos-cust-phone').value = c.phone;
+    document.getElementById('pos-cust-nic').value = c.nic_number || '';
+    document.getElementById('pos-cust-email').value = c.email || '';
+    document.getElementById('pos-cust-address').value = c.address || '';
+    document.getElementById('pos-cust-search').value = c.name;
+    document.getElementById('pos-cust-search-results').style.display = 'none';
+    // Also set the hidden select
+    const sel = document.getElementById('pos-cust-select');
+    if (sel) {
+        for (let opt of sel.options) {
+            if (opt.value === id) { sel.value = id; break; }
+        }
+    }
+    toast(`Customer selected: ${c.name}`);
+};
+
+window.saveCustomerFromPOS = async function() {
+    const name = document.getElementById('pos-cust-name').value.trim();
+    const phone = document.getElementById('pos-cust-phone').value.trim();
+    if (!name || !phone) return toast('Name and Phone are required to save', 'error');
+    
+    // Check if already exists
+    const existing = customers.find(c => c.phone === phone);
+    if (existing) return toast('Customer with this phone already exists', 'error');
+    
+    const payload = {
+        name, phone,
+        nic_number: document.getElementById('pos-cust-nic').value.trim(),
+        email: document.getElementById('pos-cust-email').value.trim(),
+        address: document.getElementById('pos-cust-address').value.trim()
+    };
+    
+    try {
+        const res = await api('/customers', { method: 'POST', body: JSON.stringify(payload) });
+        if (res && res.ok) {
+            toast('Customer saved successfully');
+            loadCustomers();
+        } else {
+            toast('Failed to save customer', 'error');
+        }
+    } catch(e) {
+        toast('Error saving customer', 'error');
+    }
 };

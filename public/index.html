@@ -48,7 +48,7 @@
 
 <!-- APP -->
 <aside class="sidebar" id="sidebar">
-    <div class="logo-box"><i class='bx bx-store-alt'></i><span>දකුණේ කඩේ</span></div>
+    <div class="logo-box"><i class='bx bx-store-alt'></i><span>SmartZone</span></div>
     <ul class="nav-list">
         <li><a href="#" class="nav-link active" data-target="dashboard-view" data-title="Dashboard"><i class='bx bx-grid-alt'></i><span>Dashboard</span></a></li>
         <li><a href="#" class="nav-link" data-target="pos-view" data-title="New Bill"><i class='bx bx-cart'></i><span>New Bill</span></a></li>
@@ -64,7 +64,7 @@
         <li><a href="#" class="nav-link" data-target="slt-view" data-title="SLT Reports"><i class='bx bx-file'></i><span>SLT Reports</span></a></li>
         <li><a href="#" class="nav-link" data-target="reports-view" data-title="Reports"><i class='bx bx-bar-chart-alt-2'></i><span>Reports</span></a></li>
         <li class="nav-divider" id="nav-admin-divider" style="display:none"></li>
-        <li id="nav-admin-item" style="display:none"><a href="#" class="nav-link" data-target="admin-view" data-title="Admin"><i class='bx bx-cog'></i><span>Admin</span></a></li>
+        <li id="nav-admin-item" style="display:none"><a href="#" class="nav-link" data-target="admin-view" data-title="Admin"><i class='bx bx-cog'></i><span>Admin</span><span id="admin-notify-dot" class="notify-dot" style="display:none"></span></a></li>
     </ul>
 </aside>
 
@@ -126,6 +126,7 @@
                         <div><h2>Current Bill</h2><p id="bill-no">Auto-generated</p></div>
                         <div style="display:flex;gap:6px;align-items:center">
                             <button class="btn btn-outline btn-sm" id="btn-toggle-customer" title="Add Customer"><i class='bx bx-user-plus'></i> Customer</button>
+                            <button class="btn btn-warning btn-sm" id="btn-hold-bill" title="Hold Bill"><i class='bx bx-pause'></i> Hold</button>
                             <button class="btn btn-outline btn-sm" id="btn-clear-bill" title="Clear Bill"><i class='bx bx-trash'></i> Clear</button>
                         </div>
                     </div>
@@ -141,19 +142,30 @@
                             <input type="text" id="pos-cashier-custom" class="form-control" style="font-size:12.5px;padding:6px 10px;flex:1;display:none" placeholder="Enter cashier name...">
                         </div>
                     </div>
+                    <!-- Held Bills Strip -->
+                    <div class="held-bills-bar" id="held-bills-bar" style="display:none">
+                        <i class='bx bx-pause-circle' style="color:var(--warning);font-size:16px"></i>
+                        <span style="font-size:11px;font-weight:700;color:var(--warning)">Held Bills:</span>
+                        <div id="held-bills-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+                    </div>
                     <!-- Customer box -->
                     <div class="customer-box" id="pos-customer-box" style="display:none">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                             <h4 style="margin:0"><i class='bx bx-user'></i> Customer Details</h4>
                             <div style="display:flex;gap:6px;align-items:center">
-                                <select id="pos-cust-select" class="form-control" style="width:180px;font-size:12px;padding:4px 8px">
-                                    <option value="">+ New Customer</option>
+                                <select id="pos-cust-select" class="form-control" style="font-size:12px;padding:5px 8px;max-width:160px">
+                                    <option value="">+ New / Walk-in</option>
                                 </select>
+                                <button class="btn btn-sm btn-outline" onclick="saveCustomerFromPOS()" title="Save Customer"><i class='bx bx-save'></i> Save</button>
                                 <button class="btn-ghost" id="btn-hide-customer" title="Hide Customer" style="font-size:18px;color:var(--text-muted)"><i class='bx bx-x'></i></button>
                             </div>
                         </div>
+                        <div style="position:relative;margin-bottom:12px">
+                            <div class="search-input"><i class='bx bx-search'></i><input type="text" id="pos-cust-search" class="form-control" placeholder="Search customer by name, phone, NIC..." style="padding-left:38px" autocomplete="off"></div>
+                            <div id="pos-cust-search-results" class="customer-search-dropdown" style="display:none"></div>
+                        </div>
                         <div class="form-row">
-                            <div class="form-group"><label>Name *</label><input type="text" id="pos-cust-name" class="form-control" placeholder="Customer name"></div>
+                            <div class="form-group"><label>Name *</label><input type="text" id="pos-cust-name" class="form-control" placeholder="Customer name" maxlength="100"></div>
                             <div class="form-group"><label>Phone *</label><input type="tel" id="pos-cust-phone" class="form-control" placeholder="Phone number"></div>
                         </div>
                         <div class="form-row">
@@ -218,7 +230,7 @@
                 <div class="table-card" style="height:fit-content">
                     <div class="card-head"><h3>1. Search Products</h3></div>
                     <div class="table-responsive" style="max-height:400px">
-                        <table class="data-table" id="barcode-print-table"><thead><tr><th>Product</th><th>Barcode</th><th>Action</th></tr></thead><tbody></tbody></table>
+                        <table class="data-table" id="barcode-print-table"><thead><tr><th>Product</th><th>Barcode</th><th>Copies</th><th>Action</th></tr></thead><tbody></tbody></table>
                     </div>
                 </div>
                 <div class="table-card" style="height:fit-content">
@@ -247,9 +259,7 @@
                     <button class="btn btn-primary" id="btn-add-imei"><i class='bx bx-plus'></i> Add IMEI Stock</button>
                 </div>
             </div>
-            <div class="table-card"><div class="table-responsive">
-                <table class="data-table" id="imei-table"><thead><tr><th>IMEI</th><th>Product</th><th>Status</th><th>Customer</th><th>Warranty</th><th>Actions</th></tr></thead><tbody></tbody></table>
-            </div></div>
+            <div id="imei-groups" class="imei-groups-container"></div>
         </section>
 
         <!-- WARRANTY -->
@@ -295,7 +305,7 @@
 
         <!-- SUPPLIERS -->
         <section id="suppliers-view" class="view">
-            <div class="view-head"><h2>Suppliers</h2>
+            <div class="view-head"><h2><i class='bx bx-truck' style="color:var(--primary)"></i> Suppliers</h2>
                 <div class="view-actions">
                     <input type="text" id="sup-search" class="form-control" placeholder="Search..." style="width:200px">
                     <button class="btn btn-primary" id="btn-add-supplier"><i class='bx bx-truck'></i> Add Supplier</button>
@@ -304,6 +314,29 @@
             <div class="table-card"><div class="table-responsive">
                 <table class="data-table" id="sup-table"><thead><tr><th>Name</th><th>Phone</th><th>NIC</th><th>Email</th><th>Address</th><th>Actions</th></tr></thead><tbody></tbody></table>
             </div></div>
+            <!-- Supplier Payments -->
+            <div class="table-card" style="margin-top:20px">
+                <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
+                    <h3><i class='bx bx-money' style="color:var(--primary)"></i> Supplier Payments</h3>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <button class="btn btn-outline btn-sm" id="btn-sync-inventory" title="Sync all inventory products with suppliers into payments"><i class='bx bx-refresh'></i> Sync Inventory</button>
+                        <button class="btn btn-primary btn-sm" id="btn-add-sup-payment"><i class='bx bx-plus'></i> Add Record</button>
+                        <select id="sup-payment-filter" class="form-control" style="width:140px;font-size:12px">
+                            <option value="">All</option><option value="unpaid">Unpaid</option><option value="paid">Paid</option>
+                        </select>
+                        <select id="sup-payment-supplier-filter" class="form-control" style="width:160px;font-size:12px">
+                            <option value="">All Suppliers</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="sup-payment-summary" style="padding:10px 16px;display:flex;gap:20px;font-size:13px;border-bottom:1px solid var(--border);flex-wrap:wrap"></div>
+                <div class="table-responsive">
+                    <table class="data-table" id="sup-payments-table">
+                        <thead><tr><th>Supplier</th><th>Product</th><th>Qty</th><th>Cost</th><th>Total Owed</th><th>Sale Date</th><th>Invoice</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
         </section>
 
         <!-- INVOICES -->
@@ -335,7 +368,7 @@
             </div>
             <div style="display:flex;gap:15px;height:calc(100vh - 160px)">
                 <!-- Left Panel: Settings -->
-                <div style="flex:1;background:#fff;border-radius:12px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,0.05);overflow-y:auto;display:flex;flex-direction:column">
+                <div style="flex:1;background:var(--bg-card);border-radius:12px;padding:15px;box-shadow:var(--shadow-sm);overflow-y:auto;display:flex;flex-direction:column">
                     <input type="hidden" id="tpl-id">
                     <div class="form-group"><label>Template Name</label><input type="text" id="tpl-name" class="form-control" placeholder="E.g., My Visual Template"></div>
                     
@@ -347,9 +380,9 @@
                     </div>
                 </div>
                 <!-- Right Panel: Preview -->
-                <div style="width:85mm;background:#f8fafc;border-radius:12px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,0.05);overflow-y:auto;flex-shrink:0">
+                <div style="width:85mm;background:var(--bg-card);border-radius:12px;padding:15px;box-shadow:var(--shadow-sm);overflow-y:auto;flex-shrink:0">
                     <h4 style="margin-bottom:10px;text-align:center;color:var(--text-muted);font-size:13px"><i class='bx bx-show'></i> Live Preview</h4>
-                    <div id="tpl-preview" style="background:#fff;padding:10px;border:1px solid #ddd;min-height:200px"></div>
+                    <div id="tpl-preview" style="background:var(--bg-card);padding:10px;border:1px solid var(--border);min-height:200px"></div>
                 </div>
             </div>
         </section>
@@ -401,6 +434,7 @@
     <div class="form-row"><div class="form-group"><label>Cost Price</label><input type="number" id="prod-cost" class="form-control" step="0.01" value="0"></div>
         <div class="form-group"><label>Selling Price *</label><input type="number" id="prod-price" class="form-control" step="0.01" required></div></div>
     <div class="form-row"><div class="form-group"><label>Supplier</label><select id="prod-supplier" class="form-control"><option value="">-- No Supplier --</option></select></div>
+        <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:10px;"><label style="margin:0"><input type="checkbox" id="prod-supplier-paid" style="margin-right:8px"> <strong>Paid to Supplier?</strong></label></div>
         <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:10px;"><label style="margin:0"><input type="checkbox" id="prod-imei-tracked" style="margin-right:8px"> <strong>IMEI/Serial Number Tracked</strong></label></div></div>
     <div id="prod-normal-fields">
         <div class="form-group"><label>Quantity</label><input type="number" id="prod-qty" class="form-control" value="0"></div>
@@ -461,7 +495,7 @@
 <div class="modal-bg" id="modal-customer"><div class="modal"><div class="modal-head"><h3 id="cust-modal-title">Add Customer</h3><button class="close-btn" onclick="closeModal('modal-customer')">&times;</button></div>
 <div class="modal-body"><form id="customer-form">
     <input type="hidden" id="cust-id">
-    <div class="form-group"><label>Name *</label><input type="text" id="cust-name" class="form-control" required></div>
+    <div class="form-group"><label>Name *</label><input type="text" id="cust-name" class="form-control" required maxlength="100"></div>
     <div class="form-row"><div class="form-group"><label>Phone *</label><input type="tel" id="cust-phone" class="form-control" required></div>
         <div class="form-group"><label>NIC Number</label><input type="text" id="cust-nic" class="form-control"></div></div>
     <div class="form-group"><label>Email</label><input type="email" id="cust-email" class="form-control"></div>
@@ -551,6 +585,61 @@
     </div>
 </div></div>
 
+<!-- Supplier Payment Record Modal (Manual Add/Edit) -->
+<div class="modal-bg" id="modal-supplier-record"><div class="modal"><div class="modal-head"><h3 id="sup-record-title"><i class='bx bx-list-plus' style="color:var(--primary)"></i> Supplier Record</h3><button class="close-btn" onclick="closeModal('modal-supplier-record')">&times;</button></div>
+<div class="modal-body"><form id="supplier-record-form">
+    <input type="hidden" id="sup-rec-id">
+    <div class="form-row">
+        <div class="form-group"><label>Supplier Name *</label><input type="text" id="sup-rec-supplier" class="form-control" required list="sup-rec-supplier-list">
+        <datalist id="sup-rec-supplier-list"></datalist></div>
+        <div class="form-group"><label>Product / Reference</label><input type="text" id="sup-rec-product" class="form-control" placeholder="Optional"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Quantity</label><input type="number" id="sup-rec-qty" class="form-control" value="1" min="1"></div>
+        <div class="form-group"><label>Cost Price</label><input type="number" id="sup-rec-cost" class="form-control" step="0.01"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Total Amount Owed *</label><input type="number" id="sup-rec-total" class="form-control" step="0.01" required></div>
+        <div class="form-group"><label>Already Paid Amount</label><input type="number" id="sup-rec-paid" class="form-control" step="0.01" value="0"></div>
+    </div>
+    <div class="form-group">
+        <label>Notes</label>
+        <input type="text" id="sup-rec-notes" class="form-control" placeholder="E.g. manual entry, credit...">
+    </div>
+</form></div>
+<div class="modal-foot"><button class="btn btn-outline" onclick="closeModal('modal-supplier-record')">Cancel</button><button class="btn btn-primary" id="btn-save-sup-record"><i class='bx bx-save'></i> Save Record</button></div>
+</div></div>
+
+<!-- Supplier Payment Modal -->
+<div class="modal-bg" id="modal-supplier-pay"><div class="modal"><div class="modal-head"><h3><i class='bx bx-money' style="color:var(--primary)"></i> Pay Supplier</h3><button class="close-btn" onclick="closeModal('modal-supplier-pay')">&times;</button></div>
+<div class="modal-body"><form id="supplier-pay-form">
+    <input type="hidden" id="sup-pay-id">
+    <div class="form-group">
+        <label>Total Owed</label>
+        <input type="text" id="sup-pay-total" class="form-control" disabled style="background:var(--secondary); font-weight:bold;">
+    </div>
+    <div class="form-group">
+        <label>Remaining Balance</label>
+        <input type="text" id="sup-pay-rem" class="form-control" disabled style="background:var(--secondary); font-weight:bold; color:var(--danger)">
+    </div>
+    
+    <div class="form-group" id="sup-pay-imei-section" style="display:none; background:rgba(59,130,246,0.05); padding:10px; border-radius:6px; border:1px solid rgba(59,130,246,0.1)">
+        <label style="color:var(--primary)"><i class='bx bx-barcode'></i> Select IMEI items to pay for</label>
+        <div id="sup-pay-imei-list" style="max-height:150px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; margin-top:8px"></div>
+    </div>
+    <div class="form-group">
+        <label>Payment Amount *</label>
+        <input type="number" id="sup-pay-amount" class="form-control" step="0.01" required>
+        <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Enter the exact amount you are paying now.</p>
+    </div>
+    <div class="form-group">
+        <label>Notes (Optional)</label>
+        <input type="text" id="sup-pay-notes" class="form-control" placeholder="E.g. Cash, Bank Transfer...">
+    </div>
+</form></div>
+<div class="modal-foot"><button class="btn btn-outline" onclick="closeModal('modal-supplier-pay')">Cancel</button><button class="btn btn-primary" id="btn-submit-sup-pay"><i class='bx bx-check'></i> Make Payment</button></div>
+</div></div>
+
 <!-- Profile Modal -->
 <div class="modal-bg" id="modal-profile"><div class="modal"><div class="modal-head"><h3><i class='bx bx-user-circle' style="color:var(--primary)"></i> My Profile</h3><button class="close-btn" onclick="closeModal('modal-profile')">&times;</button></div>
 <div class="modal-body"><form id="profile-form">
@@ -596,7 +685,7 @@
         
     <div class="form-group"><label>Footer Message 1</label><input type="text" id="inv-set-msg1" class="form-control" placeholder="E.g. Thank You! Come Again"></div>
     <div class="form-group"><label>Footer Message 2 (Terms/Warranty)</label><textarea id="inv-set-msg2" class="form-control" rows="2" placeholder="E.g. Please keep this receipt for warranty claims..."></textarea></div>
-    <div class="form-group"><label>Powered By Text</label><input type="text" id="inv-set-powered" class="form-control" placeholder="E.g. Powered by SmartZone"></div>
+    <div class="form-group"><label>Powered By Text <small style="color:var(--danger);font-weight:600">🔒 Protected By pamidu</small></label><input type="text" id="inv-set-powered" class="form-control" value="Powered by SmartZone" disabled readonly style="opacity:0.6;cursor:not-allowed;background:var(--secondary)"></div>
 </form></div>
 <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal('modal-invoice-settings')">Cancel</button><button class="btn btn-primary" id="btn-save-invoice-settings"><i class='bx bx-check'></i> Save Settings</button></div>
 </div></div>
